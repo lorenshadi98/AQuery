@@ -70,29 +70,40 @@ class StoryList {
    *
    * Returns the new Story instance
    */
-
-  async addStory(user, newStory) {
+  async addStory(user, { title, author, url }) {
+    const token = user.loginToken;
     const response = await axios({
-      url: `${BASE_URL}/stories`,
       method: 'POST',
-      data: {
-        token: user.loginToken,
-        story: {
-          title: newStory.title,
-          author: newStory.author,
-          url: newStory.url
-        }
-      }
+      url: `${BASE_URL}/stories`,
+      data: { token, story: { title, author, url } }
     });
-    let { story } = response.data;
-    return new Story({
-      storyId: story.id,
-      title: story.title,
-      author: story.author,
-      url: story.url,
-      username: story.username,
-      createdAt: story.createdAt
+
+    const story = new Story(response.data.story);
+    this.stories.unshift(story);
+    user.ownStories.unshift(story);
+    return story;
+  }
+
+  /** Delete story from API and remove from the story lists.
+   *
+   * - user: the current User instance
+   * - storyId: the ID of the story you want to remove
+   */
+
+  async removeStory(user, storyId) {
+    const token = user.loginToken;
+    await axios({
+      url: `${BASE_URL}/stories/${storyId}`,
+      method: 'DELETE',
+      data: { token: user.loginToken }
     });
+
+    // filter out the story whose ID we are removing
+    this.stories = this.stories.filter((story) => story.storyId !== storyId);
+
+    // do the same thing for the user's list of stories & their favorites
+    user.ownStories = user.ownStories.filter((s) => s.storyId !== storyId);
+    user.favorites = user.favorites.filter((s) => s.storyId !== storyId);
   }
 }
 
@@ -137,7 +148,7 @@ class User {
     });
 
     let { user } = response.data;
-    console.log('success signup/signin, token is', response.data.token);
+
     return new User(
       {
         username: user.username,
@@ -164,7 +175,7 @@ class User {
     });
 
     let { user } = response.data;
-    console.log('Your token is', response.data.token);
+
     return new User(
       {
         username: user.username,
@@ -205,5 +216,31 @@ class User {
       console.error('loginViaStoredCredentials failed', err);
       return null;
     }
+  }
+  //add favorite
+  async addFavorite(story) {
+    this.favorites.push(story);
+    await this.addOrRemoveFav('add', story);
+  }
+  //remove favorite
+  async removeFavorite(story) {
+    this.favorites = this.favorites.filter(
+      (element) => element.storyId != story.storyId
+    );
+    await this.addOrRemoveFav('remove', story);
+  }
+  //add or remove favorite from API
+  async addOrRemoveFav(action, story) {
+    const token = this.loginToken;
+    const method = action === 'add' ? 'POST' : 'DELETE';
+    await axios({
+      url: `${BASE_URL}/users/${this.username}/favorites/${story.storyId}`,
+      method: method,
+      data: { token }
+    });
+  }
+  //checks if story is a user favorite
+  isFavorite(story) {
+    return this.favorites.some((element) => element.storyId === story.storyId);
   }
 }
